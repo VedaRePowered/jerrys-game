@@ -3,7 +3,7 @@ use macroquad::{
     prelude::*,
 };
 
-fn center_text(text: String, font: &Font, x: f32, y: f32, height: u16) {
+fn center_text(text: String, font: &Font, x: f32, y: f32, height: u16, color: Color) {
     let size = measure_text(&text, Some(&font), height, 1.0);
     draw_text_ex(
         &text,
@@ -12,6 +12,7 @@ fn center_text(text: String, font: &Font, x: f32, y: f32, height: u16) {
         TextParams {
             font: Some(&font),
             font_size: height,
+            color,
             ..TextParams::default()
         },
     );
@@ -49,7 +50,7 @@ async fn main() {
     let mut dead = false;
     let mut health_flash = 0.0;
     let mut poofs = Vec::new();
-    //let mut combo_text = Vec::new();
+    let mut combo_text = Vec::new();
     loop {
         clear_background(Color::new(0.0, 0.15, 0.2, 1.0));
 
@@ -69,16 +70,20 @@ async fn main() {
                 screen_width() / 2.0,
                 screen_height() / 2.0 - 100.0,
                 100,
+                WHITE,
             );
             center_text(
-                format!("Congratulations, Jerry, you got a score of {score}."),
+                format!("Congratulations, Jerry, you got a score of {score:.0}."),
                 &font,
                 screen_width() / 2.0,
                 screen_height() / 2.0 - 40.0,
                 40,
+                WHITE,
             );
-            let retry_pos = Vec2::new(screen_width() / 2.0 - retry_img.size().x / 8.0,
-                screen_height() / 2.0 + 20.0);
+            let retry_pos = Vec2::new(
+                screen_width() / 2.0 - retry_img.size().x / 8.0,
+                screen_height() / 2.0 + 20.0,
+            );
             let retry_size = retry_img.size() / 4.0;
             draw_texture_ex(
                 &retry_img,
@@ -91,7 +96,11 @@ async fn main() {
                 },
             );
             for touch in touches {
-                if touch.x > retry_pos.x && touch.y > retry_pos.y && touch.x < retry_pos.x + retry_size.x && touch.y < retry_pos.y + retry_size.y {
+                if touch.x > retry_pos.x
+                    && touch.y > retry_pos.y
+                    && touch.x < retry_pos.x + retry_size.x
+                    && touch.y < retry_pos.y + retry_size.y
+                {
                     balloons = Vec::new();
                     timer = 0.0;
                     health = 10.0;
@@ -135,6 +144,7 @@ async fn main() {
         }
 
         for touch in touches {
+            let mut hit = false;
             for i in (0..balloons.len()).rev() {
                 if (Vec2::new(balloons[i].0 .0, screen_height() - balloons[i].0 .1) - touch)
                     .length_squared()
@@ -144,37 +154,85 @@ async fn main() {
                     poofs.push((Vec2::from(balloons[i].0), 0.0));
                     balloons.remove(i);
                     combo += 1.0;
-                    score += (combo - 4.0).max(1.0).log2().floor().clamp(1.0, 5.0);
+                    let multiplier = (combo - 4.0).max(1.0).log2().clamp(2.0, 6.0) - 1.0;
+                    score += multiplier;
+                    if multiplier > 1.0 {
+                        combo_text.push((
+                            Vec2::from(mouse_position())
+                                + Vec2::new(
+                                    rand::gen_range(-50.0, 50.0),
+                                    rand::gen_range(-25.0, 75.0),
+                                ),
+                            0.0,
+                            multiplier,
+                        ));
+                    }
+                    hit = true;
                     break;
                 }
             }
+            if !hit && combo > 0.0 {
+                combo_text.push((
+                    Vec2::from(mouse_position())
+                        + Vec2::new(rand::gen_range(-50.0, 50.0), rand::gen_range(-25.0, 75.0)),
+                    0.0,
+                    1.0,
+                ));
+                combo = 0.0;
+            }
         }
         for i in (0..poofs.len()).rev() {
-            poofs[i].1 += delta*3.0;
+            poofs[i].1 += delta * 3.0;
             if poofs[i].1 > 1.0 {
                 poofs.remove(i);
                 continue;
             }
-            let tex = &poof_textures[(poofs[i].1*3.99).floor() as usize];
+            let tex = &poof_textures[(poofs[i].1 * 3.99).floor() as usize];
             draw_texture_ex(
                 tex,
                 poofs[0].0.x - tex.size().x / 4.0,
                 screen_height() - poofs[i].0.y - tex.size().y / 4.0,
-                Color::new(1.0, 1.0, 1.0, (1.0-poofs[i].1)/3.0),
+                Color::new(1.0, 1.0, 1.0, (1.0 - poofs[i].1) / 3.0),
                 DrawTextureParams {
                     dest_size: Some(tex.size() / 2.0),
                     ..DrawTextureParams::default()
                 },
             );
         }
+        for i in (0..combo_text.len()).rev() {
+            combo_text[i].1 += delta;
+            if combo_text[i].1 > 1.0 {
+                combo_text.remove(i);
+                continue;
+            }
+            let text = format!("{:.1}x", combo_text[i].2);
+            center_text(
+                text,
+                &font,
+                combo_text[i].0.x,
+                combo_text[i].0.y,
+                (125.0 + 75.0 * combo_text[i].1) as u16,
+                Color::new(1.0, 1.0, 1.0, (1.0 - combo_text[i].1).powi(3) * 0.75),
+            );
+        }
         for i in (0..balloons.len()).rev() {
-            if balloons[i].0 .1 > screen_height() + 90.0 {
+            if balloons[i].0 .1 > screen_height() + 100.0 {
                 balloons.remove(i);
                 if combo == 0.0 {
                     health -= 1.0;
                     health_flash = 1.0;
                 }
-                combo = 0.0;
+                if combo > 0.0 {
+                    combo_text.push((
+                        Vec2::new(
+                            rand::gen_range(100.0, screen_width() - 100.0),
+                            rand::gen_range(200.0, screen_height() - 100.0),
+                        ),
+                        0.0,
+                        1.0,
+                    ));
+                    combo = 0.0;
+                }
             }
         }
         if health < 0.0 {
@@ -217,9 +275,9 @@ async fn main() {
             75.0,
             health * 35.0,
             15.0,
-            Color::new(0.5+health_flash/2.0, health_flash, health_flash, 1.0),
+            Color::new(0.5 + health_flash / 2.0, health_flash, health_flash, 1.0),
         );
-        health_flash = (health_flash - delta*3.0).max(0.0);
+        health_flash = (health_flash - delta * 3.0).max(0.0);
         draw_texture_ex(
             &health_img,
             20.0,
