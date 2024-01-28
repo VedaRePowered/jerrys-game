@@ -34,6 +34,12 @@ async fn main() {
     let health_img = load_texture("textures/health.png").await.unwrap();
     let retry_img = load_texture("textures/retry.png").await.unwrap();
     let font = load_ttf_font("single_day.ttf").await.unwrap();
+    let poof_textures = &[
+        load_texture("textures/poof1.png").await.unwrap(),
+        load_texture("textures/poof2.png").await.unwrap(),
+        load_texture("textures/poof3.png").await.unwrap(),
+        load_texture("textures/poof4.png").await.unwrap(),
+    ];
     let mut balloons = Vec::new();
     let mut timer = 0.0;
     let mut health = 10.0;
@@ -41,6 +47,9 @@ async fn main() {
     let mut combo: f32 = 0.0;
     let mut game_speed = 0.5;
     let mut dead = false;
+    let mut health_flash = 0.0;
+    let mut poofs = Vec::new();
+    //let mut combo_text = Vec::new();
     loop {
         clear_background(Color::new(0.0, 0.15, 0.2, 1.0));
 
@@ -58,18 +67,18 @@ async fn main() {
                 "You Died.".to_string(),
                 &font,
                 screen_width() / 2.0,
-                screen_height() / 2.0 - 80.0,
+                screen_height() / 2.0 - 100.0,
                 100,
             );
             center_text(
-                format!("Congratulations, Jerry, you got a score of {score}"),
+                format!("Congratulations, Jerry, you got a score of {score}."),
                 &font,
                 screen_width() / 2.0,
-                screen_height() / 2.0,
+                screen_height() / 2.0 - 40.0,
                 40,
             );
             let retry_pos = Vec2::new(screen_width() / 2.0 - retry_img.size().x / 8.0,
-                screen_height() / 2.0 + 40.0);
+                screen_height() / 2.0 + 20.0);
             let retry_size = retry_img.size() / 4.0;
             draw_texture_ex(
                 &retry_img,
@@ -90,6 +99,8 @@ async fn main() {
                     combo = 1.0;
                     game_speed = 0.5;
                     dead = false;
+                    health_flash = 0.0;
+                    poofs = Vec::new();
                 }
             }
 
@@ -102,7 +113,7 @@ async fn main() {
         timer -= delta;
         while timer <= 0.0 {
             balloons.push((
-                (rand::gen_range(100.0, screen_width() - 100.0), -100.0),
+                (rand::gen_range(100.0, screen_width() - 100.0), -90.0),
                 rand::gen_range(0, balloon_textures.len()),
                 rand::gen_range(200.0, 250.0),
             ));
@@ -130,6 +141,7 @@ async fn main() {
                     < 10000.0
                 {
                     play_sound_once(&pop_sounds[rand::gen_range(0, pop_sounds.len())]);
+                    poofs.push((Vec2::from(balloons[i].0), 0.0));
                     balloons.remove(i);
                     combo += 1.0;
                     score += (combo - 4.0).max(1.0).log2().floor().clamp(1.0, 5.0);
@@ -137,11 +149,30 @@ async fn main() {
                 }
             }
         }
+        for i in (0..poofs.len()).rev() {
+            poofs[i].1 += delta*3.0;
+            if poofs[i].1 > 1.0 {
+                poofs.remove(i);
+                continue;
+            }
+            let tex = &poof_textures[(poofs[i].1*3.99).floor() as usize];
+            draw_texture_ex(
+                tex,
+                poofs[0].0.x - tex.size().x / 4.0,
+                screen_height() - poofs[i].0.y - tex.size().y / 4.0,
+                Color::new(1.0, 1.0, 1.0, (1.0-poofs[i].1)/3.0),
+                DrawTextureParams {
+                    dest_size: Some(tex.size() / 2.0),
+                    ..DrawTextureParams::default()
+                },
+            );
+        }
         for i in (0..balloons.len()).rev() {
-            if balloons[i].0 .1 > screen_height() + 100.0 {
+            if balloons[i].0 .1 > screen_height() + 90.0 {
                 balloons.remove(i);
                 if combo == 0.0 {
                     health -= 1.0;
+                    health_flash = 1.0;
                 }
                 combo = 0.0;
             }
@@ -179,15 +210,16 @@ async fn main() {
             50.0,
             health * 35.0,
             40.0,
-            Color::new(1.0, 0.0, 0.0, 1.0),
+            Color::new(1.0, health_flash, health_flash, 1.0),
         );
         draw_rectangle(
             90.0,
             75.0,
             health * 35.0,
             15.0,
-            Color::new(0.5, 0.0, 0.0, 1.0),
+            Color::new(0.5+health_flash/2.0, health_flash, health_flash, 1.0),
         );
+        health_flash = (health_flash - delta*3.0).max(0.0);
         draw_texture_ex(
             &health_img,
             20.0,
